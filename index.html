@@ -1,73 +1,723 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cosmic Web (D3 + particles.js)</title>
-
-    <!-- Tailwind (CDN for fast start) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- D3 -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Mindmap Generator</title>
+    <!-- D3.js -->
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-
-    <!-- particles.js (optional background) -->
-    <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
-  </head>
-
-  <body class="bg-slate-950 text-slate-100 overflow-hidden">
-    <!-- Background -->
-    <div id="particles" class="fixed inset-0 -z-10"></div>
-
-    <!-- HUD / Controls -->
-    <div class="fixed top-4 left-4 w-[340px] bg-slate-900/70 backdrop-blur border border-slate-700 rounded-lg p-4">
-      <div class="flex items-center justify-between">
-        <h1 class="text-sm font-semibold tracking-wide">COSMIC WEB / SUPERCLUSTER GRAPH</h1>
-        <span id="fps" class="text-xs text-slate-300 tabular-nums">FPS: --</span>
-      </div>
-
-      <div class="mt-3 space-y-3 text-xs">
-        <div>
-          <div class="flex justify-between"><span>Nodes</span><span id="nodesVal" class="tabular-nums"></span></div>
-          <input id="nodes" type="range" min="50" max="2000" value="600" class="w-full" />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --text: #f1f5f9;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            overflow: hidden;
+        }
+        
+        .glass {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .node:hover {
+            filter: brightness(1.2);
+            transform: scale(1.05);
+        }
+        
+        .connection {
+            stroke: #475569;
+            stroke-width: 2;
+            stroke-opacity: 0.6;
+        }
+        
+        .controls-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            z-index: 1000;
+        }
+        
+        .floating-panel {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            width: 300px;
+            z-index: 1000;
+        }
+        
+        .mindmap-container {
+            width: 100vw;
+            height: 100vh;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #334155;
+            outline: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+        }
+        
+        .modal-content {
+            background: var(--surface);
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .node-text {
+            font-size: 14px;
+            font-weight: 500;
+            fill: var(--text);
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+        
+        .context-menu {
+            position: absolute;
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 8px 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 3000;
+            display: none;
+        }
+        
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .context-menu-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Mindmap Container -->
+    <div class="mindmap-container" id="mindmap"></div>
+    
+    <!-- Controls Panel -->
+    <div class="controls-panel glass rounded-xl p-4 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold">🧠 Mindmap Generator</h2>
+            <div class="flex gap-2">
+                <button id="exportBtn" class="btn-primary text-sm">
+                    <i class="fas fa-download mr-1"></i> Export
+                </button>
+            </div>
         </div>
-
-        <div>
-          <div class="flex justify-between"><span>Edge threshold</span><span id="edgeVal" class="tabular-nums"></span></div>
-          <input id="edge" type="range" min="0" max="100" value="45" class="w-full" />
+        
+        <div class="space-y-4">
+            <!-- Central Topic Input -->
+            <div>
+                <label class="block text-sm font-medium mb-2">Central Topic</label>
+                <input type="text" id="centralTopic" value="Artificial Intelligence" 
+                       class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white">
+            </div>
+            
+            <!-- Layout Controls -->
+            <div>
+                <label class="block text-sm font-medium mb-2">Layout Style</label>
+                <select id="layoutStyle" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                    <option value="radial">Radial</option>
+                    <option value="hierarchical">Hierarchical</option>
+                    <option value="organic">Organic</option>
+                </select>
+            </div>
+            
+            <!-- Generation Controls -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Nodes</label>
+                    <input type="range" id="nodeCount" min="10" max="200" value="50" class="slider">
+                    <div class="text-xs text-slate-400 text-center" id="nodeCountValue">50</div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Complexity</label>
+                    <input type="range" id="complexity" min="1" max="5" value="3" class="slider">
+                    <div class="text-xs text-slate-400 text-center" id="complexityValue">3</div>
+                </div>
+            </div>
+            
+            <!-- Visual Controls -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Node Size</label>
+                    <input type="range" id="nodeSize" min="5" max="30" value="15" class="slider">
+                    <div class="text-xs text-slate-400 text-center" id="nodeSizeValue">15</div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Connection Strength</label>
+                    <input type="range" id="connectionStrength" min="1" max="10" value="5" class="slider">
+                    <div class="text-xs text-slate-400 text-center" id="connectionStrengthValue">5</div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="grid grid-cols-2 gap-2 pt-2">
+                <button id="generateBtn" class="btn-primary">
+                    <i class="fas fa-sync-alt mr-1"></i> Generate
+                </button>
+                <button id="clearBtn" class="bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded-lg transition">
+                    <i class="fas fa-trash mr-1"></i> Clear
+                </button>
+            </div>
         </div>
-
-        <div>
-          <div class="flex justify-between"><span>Repulsion</span><span id="repelVal" class="tabular-nums"></span></div>
-          <input id="repel" type="range" min="0" max="3000" value="900" class="w-full" />
+    </div>
+    
+    <!-- Information Panel -->
+    <div class="floating-panel glass rounded-xl p-4 shadow-2xl">
+        <h3 class="font-bold mb-3">Mindmap Info</h3>
+        <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+                <span>Nodes:</span>
+                <span id="infoNodes">0</span>
+            </div>
+            <div class="flex justify-between">
+                <span>Connections:</span>
+                <span id="infoConnections">0</span>
+            </div>
+            <div class="flex justify-between">
+                <span>Depth:</span>
+                <span id="infoDepth">0</span>
+            </div>
+            <div class="flex justify-between">
+                <span>Status:</span>
+                <span id="infoStatus">Ready</span>
+            </div>
         </div>
-
-        <div class="grid grid-cols-2 gap-2 pt-1">
-          <button id="regen" class="px-3 py-2 rounded bg-cyan-600/90 hover:bg-cyan-600">Regenerate</button>
-          <button id="pause" class="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600">Pause</button>
-          <button id="resetView" class="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 col-span-2">Reset view</button>
+        
+        <div class="mt-4 pt-3 border-t border-slate-600">
+            <h4 class="font-bold mb-2">Quick Actions</h4>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="focusCenter" class="bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs">
+                    <i class="fas fa-crosshairs mr-1"></i> Center
+                </button>
+                <button id="togglePhysics" class="bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs">
+                    <i class="fas fa-atom mr-1"></i> Physics
+                </button>
+                <button id="autoArrange" class="bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs">
+                    <i class="fas fa-project-diagram mr-1"></i> Arrange
+                </button>
+                <button id="showLegend" class="bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs">
+                    <i class="fas fa-info-circle mr-1"></i> Legend
+                </button>
+            </div>
         </div>
-
-        <div class="flex items-center gap-2 pt-1">
-          <input id="labels" type="checkbox" class="accent-cyan-500" checked />
-          <label for="labels">Labels</label>
-
-          <div class="ml-auto flex items-center gap-2">
-            <input id="bg" type="checkbox" class="accent-cyan-500" checked />
-            <label for="bg">Particles bg</label>
-          </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu">
+        <div class="context-menu-item" data-action="edit">
+            <i class="fas fa-edit mr-2"></i> Edit Node
         </div>
-
-        <div id="inspect" class="mt-2 p-2 rounded bg-slate-950/60 border border-slate-800 leading-5">
-          <div class="text-slate-300">Hover a node…</div>
+        <div class="context-menu-item" data-action="delete">
+            <i class="fas fa-trash mr-2"></i> Delete Node
         </div>
-      </div>
+        <div class="context-menu-item" data-action="addChild">
+            <i class="fas fa-plus mr-2"></i> Add Child
+        </div>
+        <div class="context-menu-item" data-action="centerView">
+            <i class="fas fa-crosshairs mr-2"></i> Center View
+        </div>
+    </div>
+    
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">Export Mindmap</h3>
+                <button class="close-modal text-xl">&times;</button>
+            </div>
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <button id="exportJSON" class="btn-primary py-3">
+                        <i class="fas fa-code mr-2"></i> JSON
+                    </button>
+                    <button id="exportPNG" class="btn-primary py-3">
+                        <i class="fas fa-image mr-2"></i> PNG
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <button id="exportSVG" class="btn-primary py-3">
+                        <i class="fas fa-vector-square mr-2"></i> SVG
+                    </button>
+                    <button id="exportPDF" class="btn-primary py-3">
+                        <i class="fas fa-file-pdf mr-2"></i> PDF
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Render Surface -->
-    <canvas id="links" class="fixed inset-0"></canvas>
-    <svg id="nodesSvg" class="fixed inset-0"></svg>
+    <script>
+        // Mindmap Data Structure
+        let mindmapData = {
+            nodes: [],
+            links: [],
+            centralTopic: 'Artificial Intelligence'
+        };
 
-    <script type="module" src="./app.js"></script>
-  </body>
+        // D3 Force Simulation
+        let simulation;
+        let svg, g, node, link, text;
+        let width, height;
+        
+        // Initialize the mindmap
+        function initMindmap() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            
+            // Create SVG container
+            svg = d3.select('#mindmap')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            g = svg.append('g');
+            
+            // Initialize simulation
+            initSimulation();
+            
+            // Generate initial mindmap
+            generateMindmap();
+            
+            // Set up zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+            
+            svg.call(zoom);
+        }
+        
+        // Initialize force simulation
+        function initSimulation() {
+            simulation = d3.forceSimulation()
+                .force('link', d3.forceLink().id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(d => d.radius + 10));
+        }
+        
+        // Generate mindmap based on current settings
+        function generateMindmap() {
+            const centralTopic = document.getElementById('centralTopic').value;
+            const nodeCount = parseInt(document.getElementById('nodeCount').value);
+            const complexity = parseInt(document.getElementById('complexity').value);
+            
+            mindmapData.nodes = [];
+            mindmapData.links = [];
+            
+            // Add central topic
+            const centerNode = {
+                id: 'center',
+                name: centralTopic,
+                type: 'central',
+                radius: 20,
+                depth: 0,
+                x: width / 2,
+                y: height / 2
+            };
+            mindmapData.nodes.push(centerNode);
+            
+            // Generate subtopics based on complexity
+            const categories = generateCategories(complexity);
+            
+            categories.forEach((category, categoryIndex) => {
+                const categoryNode = {
+                    id: `category-${categoryIndex}`,
+                    name: category.name,
+                    type: 'category',
+                    radius: 15,
+                    depth: 1,
+                    category: categoryIndex
+                };
+                mindmapData.nodes.push(categoryNode);
+                mindmapData.links.push({ source: 'center', target: categoryNode.id });
+                
+                // Generate leaf nodes for this category
+                const leafCount = Math.max(3, Math.floor(nodeCount / categories.length));
+                for (let i = 0; i < leafCount; i++) {
+                    const leafNode = {
+                        id: `leaf-${categoryIndex}-${i}`,
+                        name: generateLeafName(category.name, i),
+                        type: 'leaf',
+                        radius: 10,
+                        depth: 2,
+                        category: categoryIndex
+                    };
+                    mindmapData.nodes.push(leafNode);
+                    mindmapData.links.push({ source: categoryNode.id, target: leafNode.id });
+                }
+            });
+            
+            updateMindmap();
+            updateInfoPanel();
+        }
+        
+        // Generate categories based on complexity
+        function generateCategories(complexity) {
+            const baseCategories = [
+                'Machine Learning', 'Neural Networks', 'Computer Vision',
+                'Natural Language', 'Robotics', 'Ethics'
+            ];
+            
+            const advancedCategories = [
+                'Deep Learning', 'Reinforcement Learning', 'Generative AI',
+                'Computer Vision', 'Natural Language Processing', 'Robotics',
+                'AI Ethics', 'Explainable AI', 'AI Safety', 'Quantum AI'
+            ];
+            
+            const categories = complexity >= 4 ? advancedCategories : baseCategories;
+            return categories.slice(0, 3 + complexity).map(name => ({ name }));
+        }
+        
+        // Generate leaf node names
+        function generateLeafName(category, index) {
+            const prefixes = {
+                'Machine Learning': ['Supervised', 'Unsupervised', 'Semi-supervised', 'Ensemble'],
+                'Neural Networks': ['Feedforward', 'Recurrent', 'Convolutional', 'Transformer'],
+                'Computer Vision': ['Object Detection', 'Image Segmentation', 'Face Recognition'],
+                'Natural Language': ['Sentiment Analysis', 'Text Generation', 'Translation'],
+                'Robotics': ['Motion Planning', 'SLAM', 'Human-Robot Interaction'],
+                'Ethics': ['Bias Mitigation', 'Privacy Protection', 'Accountability'],
+                'Deep Learning': ['CNN Architectures', 'RNN Variants', 'Attention Mechanisms'],
+                'Reinforcement Learning': ['Q-Learning', 'Policy Gradients', 'Multi-agent'],
+                'Generative AI': ['GANs', 'VAEs', 'Diffusion Models'],
+                'Natural Language Processing': ['BERT', 'GPT', 'T5', 'Word Embeddings'],
+                'AI Ethics': ['Fairness', 'Transparency', 'Privacy', 'Safety'],
+                'Explainable AI': ['LIME', 'SHAP', 'Attention Visualization'],
+                'AI Safety': ['Alignment', 'Robustness', 'Verification'],
+                'Quantum AI': ['Quantum ML', 'Quantum Optimization', 'Quantum Neural Networks']
+            };
+            
+            const suffix = ['Methods', 'Algorithms', 'Techniques', 'Models', 'Systems'];
+            const prefixList = prefixes[category] || ['Advanced', 'Modern', 'Innovative'];
+            
+            return `${prefixList[index % prefixList.length]} ${suffix[index % suffix.length]}`;
+        }
+        
+        // Update the visual representation
+        function updateMindmap() {
+            // Remove existing elements
+            g.selectAll('.connection').remove();
+            g.selectAll('.node').remove();
+            g.selectAll('.node-text').remove();
+            
+            // Update simulation
+            simulation.nodes(mindmapData.nodes);
+            simulation.force('link').links(mindmapData.links);
+            
+            // Create links
+            link = g.selectAll('.connection')
+                .data(mindmapData.links)
+                .enter()
+                .append('line')
+                .attr('class', 'connection')
+                .attr('stroke-width', d => {
+                    const strength = parseInt(document.getElementById('connectionStrength').value);
+                    return Math.max(1, strength / 2);
+                });
+            
+            // Create nodes
+            node = g.selectAll('.node')
+                .data(mindmapData.nodes)
+                .enter()
+                .append('circle')
+                .attr('class', 'node')
+                .attr('r', d => {
+                    const baseSize = parseInt(document.getElementById('nodeSize').value);
+                    return d.type === 'central' ? baseSize + 10 : 
+                           d.type === 'category' ? baseSize + 5 : baseSize;
+                })
+                .attr('fill', d => {
+                    if (d.type === 'central') return '#3b82f6';
+                    if (d.type === 'category') return '#8b5cf6';
+                    return '#06b6d4';
+                })
+                .call(d3.drag()
+                    .on('start', dragStarted)
+                    .on('drag', dragged)
+                    .on('end', dragEnded))
+                .on('contextmenu', showContextMenu);
+            
+            // Create text labels
+            text = g.selectAll('.node-text')
+                .data(mindmapData.nodes)
+                .enter()
+                .append('text')
+                .attr('class', 'node-text')
+                .text(d => d.name)
+                .attr('font-size', d => {
+                    if (d.type === 'central') return '16px';
+                    if (d.type === 'category') return '14px';
+                    return '12px';
+                });
+            
+            // Update positions on simulation tick
+            simulation.on('tick', () => {
+                link.attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node.attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+                
+                text.attr('x', d => d.x)
+                    .attr('y', d => d.y);
+            });
+            
+            // Restart simulation
+            simulation.alpha(1).restart();
+        }
+        
+        // Drag functions for nodes
+        function dragStarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragEnded(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+        
+        // Context menu
+        function showContextMenu(event, d) {
+            event.preventDefault();
+            const contextMenu = document.getElementById('contextMenu');
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = `${event.pageX}px`;
+            contextMenu.style.top = `${event.pageY}px`;
+            
+            // Store current node for context actions
+            contextMenu.currentNode = d;
+        }
+        
+        // Update information panel
+        function updateInfoPanel() {
+            document.getElementById('infoNodes').textContent = mindmapData.nodes.length;
+            document.getElementById('infoConnections').textContent = mindmapData.links.length;
+            document.getElementById('infoDepth').textContent = Math.max(...mindmapData.nodes.map(n => n.depth));
+            document.getElementById('infoStatus').textContent = 'Ready';
+        }
+        
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            initMindmap();
+            
+            // Slider value displays
+            document.getElementById('nodeCount').addEventListener('input', (e) => {
+                document.getElementById('nodeCountValue').textContent = e.target.value;
+            });
+            
+            document.getElementById('complexity').addEventListener('input', (e) => {
+                document.getElementById('complexityValue').textContent = e.target.value;
+            });
+            
+            document.getElementById('nodeSize').addEventListener('input', (e) => {
+                document.getElementById('nodeSizeValue').textContent = e.target.value;
+            });
+            
+            document.getElementById('connectionStrength').addEventListener('input', (e) => {
+                document.getElementById('connectionStrengthValue').textContent = e.target.value;
+            });
+            
+            // Button events
+            document.getElementById('generateBtn').addEventListener('click', generateMindmap);
+            document.getElementById('clearBtn').addEventListener('click', () => {
+                mindmapData.nodes = [];
+                mindmapData.links = [];
+                updateMindmap();
+                updateInfoPanel();
+            });
+            
+            document.getElementById('exportBtn').addEventListener('click', () => {
+                document.getElementById('exportModal').style.display = 'block';
+            });
+            
+            document.getElementById('focusCenter').addEventListener('click', () => {
+                svg.transition().duration(750).call(
+                    d3.zoom().transform,
+                    d3.zoomIdentity.translate(width / 2, height / 2).scale(1)
+                );
+            });
+            
+            document.getElementById('togglePhysics').addEventListener('click', () => {
+                simulation.alphaTarget(0.3).restart();
+            });
+            
+            // Context menu actions
+            document.querySelectorAll('.context-menu-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    const action = e.currentTarget.dataset.action;
+                    const node = document.getElementById('contextMenu').currentNode;
+                    
+                    switch(action) {
+                        case 'edit':
+                            const newName = prompt('Edit node name:', node.name);
+                            if (newName) node.name = newName;
+                            updateMindmap();
+                            break;
+                        case 'delete':
+                            mindmapData.nodes = mindmapData.nodes.filter(n => n.id !== node.id);
+                            mindmapData.links = mindmapData.links.filter(l => 
+                                l.source.id !== node.id && l.target.id !== node.id);
+                            updateMindmap();
+                            break;
+                        case 'addChild':
+                            const childName = prompt('Enter child node name:');
+                            if (childName) {
+                                const childNode = {
+                                    id: `child-${Date.now()}`,
+                                    name: childName,
+                                    type: 'leaf',
+                                    radius: 10,
+                                    depth: node.depth + 1
+                                };
+                                mindmapData.nodes.push(childNode);
+                                mindmapData.links.push({ source: node.id, target: childNode.id });
+                                updateMindmap();
+                            }
+                            break;
+                        case 'centerView':
+                            svg.transition().duration(750).call(
+                                d3.zoom().transform,
+                                d3.zoomIdentity.translate(width / 2 - node.x, height / 2 - node.y).scale(2)
+                            );
+                            break;
+                    }
+                    
+                    document.getElementById('contextMenu').style.display = 'none';
+                });
+            });
+            
+            // Close context menu when clicking elsewhere
+            document.addEventListener('click', () => {
+                document.getElementById('contextMenu').style.display = 'none';
+            });
+            
+            // Modal close buttons
+            document.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.getElementById('exportModal').style.display = 'none';
+                });
+            });
+            
+            // Export functions
+            document.getElementById('exportJSON').addEventListener('click', () => {
+                const dataStr = JSON.stringify(mindmapData, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                downloadBlob(dataBlob, 'mindmap.json');
+            });
+            
+            document.getElementById('exportPNG').addEventListener('click', () => {
+                // PNG export implementation would go here
+                alert('PNG export functionality would be implemented here');
+            });
+        });
+        
+        // Utility function to download blobs
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            svg.attr('width', width).attr('height', height);
+            simulation.force('center', d3.forceCenter(width / 2, height / 2));
+            simulation.alpha(0.3).restart();
+        });
+    </script>
+</body>
 </html>
