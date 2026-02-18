@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cosmic Web (D3 + particles.js)</title>
+
+    <!-- Tailwind (CDN for fast start) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- D3 -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+    <!-- particles.js (optional background) -->
+    <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
+  </head>
+
+  <body class="bg-slate-950 text-slate-100 overflow-hidden">
+    <!-- Background -->
+    <div id="particles" class="fixed inset-0 -z-10"></div>
+
+    <!-- HUD / Controls -->
+    <div class="fixed top-4 left-4 w-[340px] bg-slate-900/70 backdrop-blur border border-slate-700 rounded-lg p-4">
+      <div class="flex items-center justify-between">
+        <h1 class="text-sm font-semibold tracking-wide">COSMIC WEB / SUPERCLUSTER GRAPH</h1>
+        <span id="fps" class="text-xs text-slate-300 tabular-nums">FPS: --</span>
+      </div>
+
+      <div class="mt-3 space-y-3 text-xs">
+        <div>
+          <div class="flex justify-between"><span>Nodes</span><span id="nodesVal" class="tabular-nums"></span></div>
+          <input id="nodes" type="range" min="50" max="2000" value="600" class="w-full" />
+        </div>
+
+        <div>
+          <div class="flex justify-between"><span>Edge threshold</span><span id="edgeVal" class="tabular-nums"></span></div>
+          <input id="edge" type="range" min="0" max="100" value="45" class="w-full" />
+        </div>
+
+        <div>
+          <div class="flex justify-between"><span>Repulsion</span><span id="repelVal" class="tabular-nums"></span></div>
+          <input id="repel" type="range" min="0" max="3000" value="900" class="w-full" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button id="regen" class="px-3 py-2 rounded bg-cyan-600/90 hover:bg-cyan-600">Regenerate</button>
+          <button id="pause" class="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600">Pause</button>
+          <button id="resetView" class="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 col-span-2">Reset view</button>
+        </div>
+
+        <div class="flex items-center gap-2 pt-1">
+          <input id="labels" type="checkbox" class="accent-cyan-500" checked />
+          <label for="labels">Labels</label>
+
+          <div class="ml-auto flex items-center gap-2">
+            <input id="bg" type="checkbox" class="accent-cyan-500" checked />
+            <label for="bg">Particles bg</label>
+          </div>
+        </div>
+
+        <div id="inspect" class="mt-2 p-2 rounded bg-slate-950/60 border border-slate-800 leading-5">
+          <div class="text-slate-300">Hover a node…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Render Surface -->
+    <canvas id="links" class="fixed inset-0"></canvas>
+    <svg id="nodesSvg" class="fixed inset-0"></svg>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
