@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RDAS Terminal Simulator</title>
+  <style>
+    :root {
+      --bg: #060300;
+      --fg: #ffbf3a;
+      --fg-dim: #c98b14;
+      --ok: #ffd36a;
+      --err: #ff6a3a;
+      --sel: rgba(255,176,0,0.25);
+      --glow: rgba(255,176,0,0.35);
+      --scanline-opacity: 0.10;
+      --noise-opacity: 0.05;
+      --radius: 16px;
+      --pad: 18px;
+      --font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --fs: 15px;
+      --lh: 1.35;
+      --cursor-blink: 520ms;
+    }
+
+    html, body { height: 100%; margin: 0; background: #000; }
+    body {
+      display: grid;
+      place-items: center;
+      font-family: var(--font);
+      user-select: text;
+    }
+
+    /* CRT frame */
+    .crt {
+      width: min(980px, calc(100vw - 24px));
+      height: min(680px, calc(100vh - 24px));
+      background: radial-gradient(120% 120% at 50% 30%, rgba(255,176,0,0.06), transparent 55%),
+                  radial-gradient(150% 120% at 50% 70%, rgba(0,0,0,0.85), rgba(0,0,0,1) 70%),
+                  var(--bg);
+      color: var(--fg);
+      border-radius: var(--radius);
+      box-shadow:
+        0 24px 80px rgba(0,0,0,0.75),
+        inset 0 0 0 1px rgba(255,176,0,0.10),
+        inset 0 0 60px rgba(255,176,0,0.06);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Scanlines */
+    .crt::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 2px,
+        rgba(0,0,0,var(--scanline-opacity)) 3px
+      );
+      pointer-events: none;
+      mix-blend-mode: multiply;
+    }
+
+    /* Noise */
+    .crt::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E");
+      opacity: var(--noise-opacity);
+      pointer-events: none;
+      mix-blend-mode: overlay;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      padding: var(--pad);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .header {
+      color: var(--fg-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      opacity: 0.9;
+      text-shadow: 0 0 8px var(--glow);
+    }
+
+    .buffer {
+      flex: 1;
+      overflow: auto;
+      padding-right: 10px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,176,0,0.35) rgba(0,0,0,0.4);
+    }
+    .buffer::-webkit-scrollbar { width: 10px; }
+    .buffer::-webkit-scrollbar-thumb { background: rgba(255,176,0,0.22); border-radius: 10px; }
+    .buffer::-webkit-scrollbar-track { background: rgba(0,0,0,0.35); }
+
+    .line {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: var(--fs);
+      line-height: var(--lh);
+      text-shadow: 0 0 10px var(--glow);
+    }
+    .dim { color: var(--fg-dim); }
+    .ok  { color: var(--ok); }
+    .err { color: var(--err); }
+
+    .promptRow {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      font-size: var(--fs);
+      line-height: var(--lh);
+      text-shadow: 0 0 12px var(--glow);
+    }
+    .prompt { color: var(--fg); }
+    .inputWrap {
+      flex: 1;
+      display: inline-flex;
+      align-items: baseline;
+      min-width: 10px;
+    }
+
+    /* Use a contenteditable span for better selection/paste */
+    .input {
+      outline: none;
+      white-space: pre;
+      min-height: 1em;
+      flex: 1;
+      caret-color: transparent; /* we draw cursor ourselves */
+      background: transparent;
+      color: var(--fg);
+      font-family: var(--font);
+    }
+    ::selection { background: var(--sel); }
+
+    .cursor {
+      display: inline-block;
+      width: 0.62em;
+      height: 1.05em;
+      transform: translateY(2px);
+      background: var(--fg);
+      box-shadow: 0 0 16px var(--glow), 0 0 4px rgba(255,176,0,0.6);
+      margin-left: 2px;
+      animation: blink var(--cursor-blink) steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .hint {
+      font-size: 12px;
+      color: var(--fg-dim);
+      opacity: 0.85;
+      text-shadow: 0 0 8px var(--glow);
+    }
+
+    .kbd {
+      border: 1px solid rgba(255,176,0,0.25);
+      padding: 0 6px;
+      border-radius: 8px;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="crt" id="crt">
+    <div class="screen">
+      <div class="header">
+        <div id="title">rdas_neuro_prometheus_fortress</div>
+        <div id="clock"></div>
+      </div>
+
+      <div class="buffer" id="buffer" aria-label="terminal output"></div>
+
+      <div class="promptRow" id="promptRow">
+        <div class="prompt" id="prompt"></div>
+        <div class="inputWrap">
+          <span class="input" id="input" contenteditable="true" spellcheck="false" aria-label="terminal input"></span>
+          <span class="cursor" aria-hidden="true"></span>
+        </div>
+      </div>
+
+      <div class="hint">
+        Shortcuts: <span class="kbd">Ctrl+L</span> clear
+        <span class="kbd">↑/↓</span> history
+        <span class="kbd">Tab</span> complete
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ---------------------------
+  // CONFIG (single source of truth)
+  // ---------------------------
+  const CONFIG = {
+    display: {
+      mode: "amber_phosphor",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontSizePx: 15,
+      lineHeight: 1.35,
+      cursor: "block",
+      cursorBlinkMs: 520,
+      scanlines: true,
+      scanlineOpacity: 0.10,
+      noise: true,
+      noiseOpacity: 0.05,
+      vignette: true,
+      glowStrength: 0.85,
+      glowBlurPx: 10,
+      phosphorTint: "#ffb000",
+      bgColor: "#060300",
+      textColor: "#ffbf3a",
+      dimTextColor: "#c98b14",
+      errorColor: "#ff6a3a",
+      okColor: "#ffd36a",
+      selectionBg: "rgba(255,176,0,0.25)"
+    },
+    terminal: {
+      title: "rdas_neuro_prometheus_fortress",
+      bannerEnabled: true,
+      maxBufferLines: 3000,
+      rightMarginCols: 92,
+      wrap: true,
+      pasteTrim: true,
+      copyOnSelect: false
+    },
+    session: {
+      user: "operator",
+      host: "fortress",
+      cwd: "/home/operator",
+      promptTemplate: "{user}@{host}:{cwd}$ ",
+      motd: "Type 'help' for commands. Use 'config' to view settings."
+    },
+    input: {
+      historyMax: 500,
+      tabCompletion: true,
+      autocompleteDelayMs: 0,
+      keymap: "emacs_basic"
+    },
+    fs: {
+      model: "in_memory",
+      caseSensitive: true,
+      initialTree: {
+        "/home/operator/readme.txt": "RDAS fortress ready.\nUse 'help'.\n",
+        "/etc/motd": "NEURO_PROMETHEUS_FORTRESS :: AUTH REQUIRED\n"
+      }
+    },
+    safety: {
+      allowEval: false,
+      allowNetwork: false,
+      allowFileDownload: false
+    }
+  };
+
+  // ---------------------------
+  // DOM
+  // ---------------------------
+  const root = document.documentElement;
+  const crt = document.getElementById("crt");
+  const bufferEl = document.getElementById("buffer");
+  const inputEl = document.getElementById("input");
+  const promptEl = document.getElementById("prompt");
+  const titleEl = document.getElementById("title");
+  const clockEl = document.getElementById("clock");
+
+  // Apply config to CSS vars
+  function applyTheme() {
+    root.style.setProperty("--bg", CONFIG.display.bgColor);
+    root.style.setProperty("--fg", CONFIG.display.textColor);
+    root.style.setProperty("--fg-dim", CONFIG.display.dimTextColor);
+    root.style.setProperty("--ok", CONFIG.display.okColor);
+    root.style.setProperty("--err", CONFIG.display.errorColor);
+    root.style.setProperty("--sel", CONFIG.display.selectionBg);
+    root.style.setProperty("--glow", "rgba(255,176,0,0.35)");
+    root.style.setProperty("--scanline-opacity", String(CONFIG.display.scanlineOpacity));
+    root.style.setProperty("--noise-opacity", String(CONFIG.display.noiseOpacity));
+    root.style.setProperty("--font", CONFIG.display.fontFamily);
+    root.style.setProperty("--fs", CONFIG.display.fontSizePx + "px");
+    root.style.setProperty("--lh", String(CONFIG.display.lineHeight));
+    root.style.setProperty("--cursor-blink", CONFIG.display.cursorBlinkMs + "ms");
+
+    // Toggle scanlines/noise by changing opacities
+    crt.style.setProperty("--scanline-opacity", CONFIG.display.scanlines ? String(CONFIG.display.scanlineOpacity) : "0");
+    crt.style.setProperty("--noise-opacity", CONFIG.display.noise ? String(CONFIG.display.noiseOpacity) : "0");
+
+    titleEl.textContent = CONFIG.terminal.title;
+  }
+
+  // ---------------------------
+  // Buffer utilities
+  // ---------------------------
+  const buffer = [];
+  function pushLine(text, cls="") {
+    buffer.push({ text, cls });
+    // enforce max buffer
+    if (buffer.length > CONFIG.terminal.maxBufferLines) {
+      buffer.splice(0, buffer.length - CONFIG.terminal.maxBufferLines);
+    }
+    renderBufferTail(1);
+  }
+
+  function pushLines(text, cls="") {
+    (text ?? "").split("\n").forEach((line, i, arr) => {
+      // keep final empty line if text ends with \n
+      if (i === arr.length - 1 && line === "" && !text.endsWith("\n")) return;
+      buffer.push({ text: line, cls });
+    });
+    if (buffer.length > CONFIG.terminal.maxBufferLines) {
+      buffer.splice(0, buffer.length - CONFIG.terminal.maxBufferLines);
+    }
+    renderAll(); // multi-line; render all is simpler
+  }
+
+  function renderAll() {
+    bufferEl.innerHTML = "";
+    for (const item of buffer) {
+      const div = document.createElement("div");
+      div.className = "line" + (item.cls ? " " + item.cls : "");
+      div.textContent = item.text;
+      bufferEl.appendChild(div);
+    }
+    scrollToBottom();
+  }
+
+  function renderBufferTail(n) {
+    // append last n lines (fast path)
+    const start = Math.max(0, buffer.length - n);
+    for (let i = start; i < buffer.length; i++) {
+      const item = buffer[i];
+      const div = document.createElement("div");
+      div.className = "line" + (item.cls ? " " + item.cls : "");
+      div.textContent = item.text;
+      bufferEl.appendChild(div);
+    }
+    // prune DOM if needed
+    while (bufferEl.childNodes.length > CONFIG.terminal.maxBufferLines) {
+      bufferEl.removeChild(bufferEl.firstChild);
+    }
+    scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    bufferEl.scrollTop = bufferEl.scrollHeight;
+  }
+
+  // ---------------------------
+  // Prompt + session
+  // ---------------------------
+  const session = {
+    user: CONFIG.session.user,
+    host: CONFIG.session.host,
+    cwd: CONFIG.session.cwd
+  };
+
+  function fmtPrompt() {
+    return CONFIG.session.promptTemplate
+      .replace("{user}", session.user)
+      .replace("{host}", session.host)
+      .replace("{cwd}", session.cwd);
+  }
+
+  function setPrompt() {
+    promptEl.textContent = fmtPrompt();
+  }
+
+  // ---------------------------
+  // In-memory FS
+  // ---------------------------
+  const fs = new Map(Object.entries(CONFIG.fs.initialTree));
+
+  function normPath(path) {
+    if (!path) return session.cwd;
+    if (path.startsWith("/")) return path.replace(/\/+/g, "/");
+    const base = session.cwd.endsWith("/") ? session.cwd.slice(0, -1) : session.cwd;
+    return (base + "/" + path).replace(/\/+/g, "/");
+  }
+
+  function dirname(path) {
+    const p = path.replace(/\/+$/,"");
+    const i = p.lastIndexOf("/");
+    return i <= 0 ? "/" : p.slice(0, i);
+  }
+
+  function isDir(path) {
+    const prefix = path.endsWith("/") ? path : path + "/";
+    for (const k of fs.keys()) if (k.startsWith(prefix)) return true;
+    return false;
+  }
+
+  function listDir(path) {
+    const dir = path.endsWith("/") ? path : path + "/";
+    const out = new Set();
+    for (const k of fs.keys()) {
+      if (k.startsWith(dir)) {
+        const rest = k.slice(dir.length);
+        const head = rest.split("/")[0];
+        if (head) out.add(head);
+      }
+    }
+    return [...out].sort((a,b)=>a.localeCompare(b));
+  }
+
+  // ---------------------------
+  // Commands
+  // ---------------------------
+  const COMMANDS = {
+    help(args) {
+      pushLines(
+`Available commands:
+  help                Show this message
+  clear               Clear the screen
+  echo <text>         Print text
+  date                Show local date/time
+  whoami              Show current user
+  pwd                 Print working directory
+  cd [path]           Change directory
+  ls [path]           List directory
+  cat <file>          Print file contents
+  touch <file>        Create empty file if missing
+  mkdir <dir>         Create directory (stub)
+  rm <path>           Remove file (not recursive)
+  theme <amber|green> Switch phosphor tint
+  set <key> <value>   Set a config field (limited)
+  config              Print current config
+  banner              Print banner
+  about               Build info`,
+      "dim"
+      );
+    },
+    clear() {
+      buffer.length = 0;
+      renderAll();
+    },
+    echo(args) {
+      pushLine(args.join(" "));
+    },
+    date() {
+      pushLine(new Date().toString(), "dim");
+    },
+    whoami() {
+      pushLine(session.user);
+    },
+    pwd() {
+      pushLine(session.cwd);
+    },
+    cd(args) {
+      const target = args[0] ? normPath(args[0]) : "/home/" + session.user;
+      if (target === "/" || isDir(target) || (fs.has(target) && isDir(target))) {
+        session.cwd = target === "/" ? "/" : target.replace(/\/+$/,"");
+        setPrompt();
+        return;
+      }
+      pushLine(`cd: no such directory: ${args[0]}`, "err");
+    },
+    ls(args) {
+      const target = normPath(args[0] || ".");
+      const dir = (args[0] && args[0].startsWith("/")) ? target : target;
+      const d = dir === "." ? session.cwd : dir;
+      const list = listDir(d);
+      if (list.length === 0) {
+        // could be file
+        if (fs.has(d)) pushLine(args[0] || ".", "dim");
+        else pushLine(`ls: cannot access '${args[0] || "."}': No such file or directory`, "err");
+        return;
+      }
+      pushLine(list.join("  "), "dim");
+    },
+    cat(args) {
+      if (!args[0]) return pushLine("cat: missing file operand", "err");
+      const p = normPath(args[0]);
+      if (!fs.has(p)) return pushLine(`cat: ${args[0]}: No such file`, "err");
+      pushLines(fs.get(p));
+    },
+    touch(args) {
+      if (!args[0]) return pushLine("touch: missing file operand", "err");
+      const p = normPath(args[0]);
+      if (!fs.has(p)) fs.set(p, "");
+    },
+    mkdir(args) {
+      if (!args[0]) return pushLine("mkdir: missing operand", "err");
+      // Directory is implicit in this FS model; ensure at least one marker file exists
+      const p = normPath(args[0]).replace(/\/+$/,"");
+      const marker = p + "/.dir";
+      if (!fs.has(marker)) fs.set(marker, "");
+    },
+    rm(args) {
+      if (!args[0]) return pushLine("rm: missing operand", "err");
+      const p = normPath(args[0]);
+      if (fs.has(p)) { fs.delete(p); return; }
+      pushLine(`rm: cannot remove '${args[0]}': No such file`, "err");
+    },
+    theme(args) {
+      const t = (args[0] || "").toLowerCase();
+      if (t === "amber") {
+        CONFIG.display.textColor = "#ffbf3a";
+        CONFIG.display.dimTextColor = "#c98b14";
+        CONFIG.display.bgColor = "#060300";
+        applyTheme();
+        pushLine("theme: amber_phosphor", "ok");
+      } else if (t === "green") {
+        CONFIG.display.textColor = "#8CFF8C";
+        CONFIG.display.dimTextColor = "#4ccf4c";
+        CONFIG.display.bgColor = "#000800";
+        applyTheme();
+        pushLine("theme: green_phosphor", "ok");
+      } else {
+        pushLine("theme: usage: theme <amber|green>", "err");
+      }
+    },
+    set(args) {
+      // limited safe setter: display.scanlines, display.noise, display.fontSizePx, terminal.maxBufferLines
+      const key = args[0];
+      const value = args.slice(1).join(" ");
+      if (!key) return pushLine("set: usage: set <key> <value>", "err");
+
+      const allowed = new Set([
+        "display.scanlines",
+        "display.noise",
+        "display.fontSizePx",
+        "terminal.maxBufferLines",
+        "session.user",
+        "session.host"
+      ]);
+
+      if (!allowed.has(key)) {
+        pushLine(`set: key not allowed: ${key}`, "err");
+        return;
+      }
+
+      const [a,b] = key.split(".");
+      let v = value;
+
+      if (v === "true") v = true;
+      if (v === "false") v = false;
+      if (!isNaN(Number(v)) && (key.includes("Px") || key.includes("Lines"))) v = Number(v);
+
+      CONFIG[a][b] = v;
+      if (key === "session.user") session.user = v;
+      if (key === "session.host") session.host = v;
+      applyTheme();
+      setPrompt();
+      pushLine(`set: ${key} = ${String(v)}`, "ok");
+    },
+    config() {
+      pushLines(printConfigASCII(), "dim");
+    },
+    banner() {
+      pushLines(makeBanner(), "dim");
+    },
+    about() {
+      pushLines(
+`RDAS Terminal Simulator
+- single-file HTML
+- in-memory FS model
+- no network, no eval
+- config-driven theme + behavior`, "dim");
+    }
+  };
+
+  function makeBanner() {
+    return [
+      "'' { begin _ adj _ sys _ role }",
+      "",
+      "[ start rdas_neuro_prometheus_fortress ]",
+      "",
+      "Terminal simulator online.",
+      CONFIG.session.motd
+    ].join("\n");
+  }
+
+  function printConfigASCII() {
+    // Compact config printer (still readable)
+    const lines = [];
+    lines.push("+--------------------------------------------------------------------------------------+");
+    lines.push("| RDAS / NEURO_PROMETHEUS_FORTRESS :: TERMINAL_SIM v1.0 (LIVE CONFIG)                   |");
+    lines.push("+--------------------------------------------------------------------------------------+");
+    const flat = [
+      ["display.mode", CONFIG.display.mode],
+      ["display.fontFamily", CONFIG.display.fontFamily],
+      ["display.fontSizePx", CONFIG.display.fontSizePx],
+      ["display.lineHeight", CONFIG.display.lineHeight],
+      ["display.cursor", CONFIG.display.cursor],
+      ["display.cursorBlinkMs", CONFIG.display.cursorBlinkMs],
+      ["display.scanlines", CONFIG.display.scanlines],
+      ["display.scanlineOpacity", CONFIG.display.scanlineOpacity],
+      ["display.noise", CONFIG.display.noise],
+      ["display.noiseOpacity", CONFIG.display.noiseOpacity],
+      ["display.bgColor", CONFIG.display.bgColor],
+      ["display.textColor", CONFIG.display.textColor],
+      ["display.dimTextColor", CONFIG.display.dimTextColor],
+      ["terminal.title", CONFIG.terminal.title],
+      ["terminal.maxBufferLines", CONFIG.terminal.maxBufferLines],
+      ["session.user", session.user],
+      ["session.host", session.host],
+      ["session.cwd", session.cwd],
+      ["session.promptTemplate", CONFIG.session.promptTemplate],
+      ["input.historyMax", CONFIG.input.historyMax],
+      ["input.tabCompletion", CONFIG.input.tabCompletion],
+      ["fs.model", CONFIG.fs.model],
+      ["safety.allowEval", CONFIG.safety.allowEval],
+      ["safety.allowNetwork", CONFIG.safety.allowNetwork]
+    ];
+    for (const [k,v] of flat) {
+      const s = String(v);
+      const row = `| ${k.padEnd(26)} = ${s}`.padEnd(86) + " |";
+      lines.push(row.slice(0, 88));
+    }
+    lines.push("+--------------------------------------------------------------------------------------+");
+    return lines.join("\n");
+  }
+
+  // ---------------------------
+  // Parsing + execution
+  // ---------------------------
+  function tokenize(input) {
+    // Simple shell-ish tokenizer with quotes
+    const out = [];
+    let cur = "";
+    let q = null;
+    for (let i=0; i<input.length; i++) {
+      const ch = input[i];
+      if (q) {
+        if (ch === q) { q = null; continue; }
+        cur += ch; continue;
+      }
+      if (ch === "'" || ch === '"') { q = ch; continue; }
+      if (/\s/.test(ch)) {
+        if (cur) out.push(cur), cur="";
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  function run(line) {
+    const trimmed = CONFIG.terminal.pasteTrim ? line.trim() : line;
+    if (!trimmed) return;
+
+    // echo command line into buffer with prompt
+    pushLine(fmtPrompt() + trimmed, "dim");
+
+    const parts = tokenize(trimmed);
+    const cmd = parts[0];
+    const args = parts.slice(1);
+
+    const fn = COMMANDS[cmd];
+    if (!fn) {
+      pushLine(`command not found: ${cmd}`, "err");
+      return;
+    }
+    try {
+      fn(args);
+    } catch (e) {
+      pushLine(`error: ${e?.message || String(e)}`, "err");
+    }
+  }
+
+  // ---------------------------
+  // History + completion
+  // ---------------------------
+  const history = [];
+  let histIdx = -1;
+
+  function setInputText(t) {
+    inputEl.textContent = t;
+    placeCaretAtEnd(inputEl);
+  }
+
+  function getInputText() {
+    return inputEl.textContent.replace(/\u00A0/g, ""); // normalize nbsp
+  }
+
+  function placeCaretAtEnd(el) {
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function complete() {
+    const txt = getInputText();
+    const parts = tokenize(txt);
+    if (parts.length === 0) return;
+
+    if (parts.length === 1 && !txt.includes(" ")) {
+      const prefix = parts[0];
+      const opts = Object.keys(COMMANDS).filter(c => c.startsWith(prefix)).sort();
+      if (opts.length === 1) {
+        setInputText(opts[0] + " ");
+      } else if (opts.length > 1) {
+        pushLine(opts.join("  "), "dim");
+      }
+      return;
+    }
+
+    // file completion for cat/ls/cd/touch/rm/mkdir
+    const cmd = parts[0];
+    const last = parts[parts.length - 1] || "";
+    const baseDir = session.cwd;
+    const searchDir = dirname(normPath(last));
+    const entries = listDir(searchDir);
+    const leafPrefix = last.includes("/") ? last.split("/").pop() : last;
+    const matches = entries.filter(e => e.startsWith(leafPrefix));
+    if (matches.length === 1) {
+      const before = txt.slice(0, txt.lastIndexOf(last));
+      const completed = matches[0];
+      const joined = (last.includes("/") ? last.split("/").slice(0,-1).join("/") + "/" : "") + completed;
+      setInputText(before + joined + " ");
+    } else if (matches.length > 1) {
+      pushLine(matches.join("  "), "dim");
+    }
+  }
+
+  // ---------------------------
+  // Keyboard handling
+  // ---------------------------
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const line = getInputText();
+      if (line.trim()) {
+        history.unshift(line);
+        if (history.length > CONFIG.input.historyMax) history.pop();
+      }
+      histIdx = -1;
+      setInputText("");
+      run(line);
+      return;
+    }
+
+    if (e.key === "Tab" && CONFIG.input.tabCompletion) {
+      e.preventDefault();
+      complete();
+      return;
+    }
+
+    // history
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (history.length === 0) return;
+      histIdx = Math.min(history.length - 1, histIdx + 1);
+      setInputText(history[histIdx] ?? "");
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (history.length === 0) return;
+      histIdx = Math.max(-1, histIdx - 1);
+      setInputText(histIdx === -1 ? "" : (history[histIdx] ?? ""));
+      return;
+    }
+
+    // Ctrl+L clear
+    if (e.ctrlKey && (e.key === "l" || e.key === "L")) {
+      e.preventDefault();
+      COMMANDS.clear([]);
+      return;
+    }
+
+    // Ctrl+A / Ctrl+E
+    if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      inputEl.focus();
+      const r = document.createRange();
+      r.selectNodeContents(inputEl);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      return;
+    }
+    if (e.ctrlKey && (e.key === "e" || e.key === "E")) {
+      e.preventDefault();
+      placeCaretAtEnd(inputEl);
+      return;
+    }
+
+    // Ctrl+K kill line
+    if (e.ctrlKey && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      setInputText("");
+      return;
+    }
+  });
+
+  // Keep focus on click
+  crt.addEventListener("mousedown", () => setTimeout(() => placeCaretAtEnd(inputEl), 0));
+
+  // Clock
+  function tick() {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2,"0");
+    const mm = String(d.getMinutes()).padStart(2,"0");
+    const ss = String(d.getSeconds()).padStart(2,"0");
+    clockEl.textContent = `${hh}:${mm}:${ss}`;
+  }
+
+  // Boot
+  applyTheme();
+  setPrompt();
+  if (CONFIG.terminal.bannerEnabled) pushLines(makeBanner(), "dim");
+  tick();
+  setInterval(tick, 1000);
+  placeCaretAtEnd(inputEl);
+})();
+</script>
+</body>
